@@ -38,10 +38,13 @@ jobs:
       - name: Dump environment
         uses: actions/github-script@v7
         id: dump
+        env:
+          vars: ${{ toJSON(vars) }}
+          matrixInclude: ${{ vars.MATRIX_INCLUDE }}
         with:
           script: |
-            console.log(vars);
-            const matrix = JSON.parse(vars.MATRIX_INCLUDE);
+            console.log(process.env.vars);
+            const matrix = JSON.parse(process.env.matrixInclude);
             const matrixApk = matrix.filter(item => item.packageFormat == "apk");
             core.setOutput("matrixIncludeApk", matrixApk);
 
