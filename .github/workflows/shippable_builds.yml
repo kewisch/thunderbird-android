@@ -273,7 +273,7 @@ jobs:
         run: |
           APK_FILE="${APP_NAME}-${PACKAGE_FLAVOR}-${RELEASE_TYPE}-signed.apk"
           APK_FILE_PRETTY="${APP_NAME}-${VERSION_NAME}.apk"
-          mv uploads/${APK_FILE} ${UPLOADS}/${APK_FILE_PRETTY}
+          mv uploads/${APK_FILE} uploads/${APK_FILE_PRETTY}
 
           echo "APK_FILE=${APK_FILE_PRETTY}" >> $GITHUB_OUTPUT
           ls -l uploads/${APK_FILE_PRETTY}
