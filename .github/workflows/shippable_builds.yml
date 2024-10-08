@@ -52,27 +52,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: |
-          echo hi > dummy.txt
+          wget -O k9mail-default-beta-signed.apk https://github.com/thunderbird/thunderbird-android/releases/download/K9MAIL_8_0b1/k9-8.0b1.apk
+          wget -O thunderbird-foss-beta-signed.apk https://github.com/thunderbird/thunderbird-android/releases/download/THUNDERBIRD_8_0b2/thunderbird-8.0b2.apk
+          wget -O thunderbird-full-beta-signed.aab https://mozilla.kewis.ch/thunderbird-full-beta.aab
         
       - name: Upload unsigned
         uses: actions/upload-artifact@v4
         with:
           name: signed-thunderbird-apk-foss
-          path: dummy.txt
+          path: thunderbird-foss-beta-signed.apk
           if-no-files-found: error
 
       - name: Upload unsigned
         uses: actions/upload-artifact@v4
         with:
           name: signed-thunderbird-bundle-full
-          path: dummy.txt
+          path: thunderbird-full-beta-signed.aab
           if-no-files-found: error
 
       - name: Upload unsigned
         uses: actions/upload-artifact@v4
         with:
           name: signed-k9mail-apk-default
-          path: dummy.txt
+          path: k9mail-default-beta-signed.apk
           if-no-files-found: error
       
   sign_mobile:
@@ -237,10 +239,9 @@ jobs:
     environment: gh-releases
     env:
       RELEASE_TYPE: ${{ needs.dump_config.outputs.releaseType }}
-      TAG_PREFIX: ${{ needs.dump_config.outputs.tagPrefix }} # TODO app name uppercase
       APP_NAME: ${{ matrix.appName }}
       PACKAGE_FORMAT: ${{ matrix.packageFormat }}
-      PACKAGE_FLAVOR: ${{ matrix.packageFlavor }}
+      PACKAGE_FLAVOR: ${{ matrix.packageFlavor || 'default' }}
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -258,7 +259,7 @@ jobs:
           NAME=$(${AAPT} dump badging $APK_FILE | sed -n "s/.*application-label:'\([^']*\)'.*/\1/p")
           VERSION=$(${AAPT} dump badging $APK_FILE | sed -n "s/.*versionName='\([^']*\)'.*/\1/p")
 
-          echo "TAG_NAME=${TAG_PREFIX}_${VERSION//./_}" >> $GITHUB_OUTPUT
+          echo "TAG_NAME=${APP_NAME^^}_${VERSION//./_}" >> $GITHUB_OUTPUT
           echo "FULL_VERSION_NAME=${NAME} ${VERSION}" >> $GITHUB_OUTPUT
           echo "VERSION_NAME=${VERSION}" >> $GITHUB_OUTPUT
 
