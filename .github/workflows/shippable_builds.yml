@@ -63,7 +63,7 @@ jobs:
             ]);
             core.setFailed("test");
 
- build_unsigned:
+  build_unsigned:
     runs-on: ubuntu-latest
     needs: [dump_config, get_environment]
     steps:
