@@ -269,7 +269,7 @@ jobs:
         id: rename
         shell: bash
         env:
-          VERSION_NAME=${{ steps.apkinfo.outputs.VERSION_NAME }}
+          VERSION_NAME: ${{ steps.apkinfo.outputs.VERSION_NAME }}
         run: |
           APK_FILE="${APP_NAME}-${PACKAGE_FLAVOR}-${RELEASE_TYPE}-signed.apk"
           APK_FILE_PRETTY="${APP_NAME}-${VERSION_NAME}.apk"
