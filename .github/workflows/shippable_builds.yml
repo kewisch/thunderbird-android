@@ -114,7 +114,7 @@ jobs:
           elif [[ "$APP_NAME" = "k9mail" ]]; then
             OUT_PATH="${OUT_BASE}/release"
             OUT_FILE="app-${APP_NAME}-release-unsigned.apk"
-            UPLOAD_FILE="${APP_NAME}-${RELEASE_TYPE}.apk"
+            UPLOAD_FILE="${APP_NAME}-default-${RELEASE_TYPE}.apk"
           else
             echo "PACKAGE_FORMAT $PACKAGE_FORMAT is unknown. Exiting."
             exit 23
