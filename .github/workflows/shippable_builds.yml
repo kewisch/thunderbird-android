@@ -63,7 +63,7 @@ jobs:
                   { data: item.packageFlavor },
                   { data: item.packageFormat },
                 ])
-              ]])
+              ])
               .write();
 
   build_unsigned:
