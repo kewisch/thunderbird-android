@@ -51,7 +51,7 @@ jobs:
             core.setOutput("matrixIncludeApk", matrixApk);
 
             core.summary.addRaw(`Beginning a ${process.env.releaseType} build with the following configurations:`, true);
-            core.summary.addTable([
+            core.summary.addTable([[
               { data: "App Name", header: true },
               { data: "Flavor", header: true },
               { data: "Format", header: true },
@@ -60,7 +60,7 @@ jobs:
                 { data: item.packageFlavor },
                 { data: item.packageFormat },
               ]).flat()
-            ]);
+            ]]);
             core.setFailed("test");
 
   build_unsigned:
