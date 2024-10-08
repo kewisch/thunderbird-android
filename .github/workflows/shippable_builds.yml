@@ -50,17 +50,19 @@ jobs:
             const matrixApk = matrix.filter(item => item.packageFormat == "apk");
             core.setOutput("matrixIncludeApk", matrixApk);
 
-            core.summary.addRaw(`Beginning a ${process.env.releaseType} build with the following configurations:`, true);
-            core.summary.addTable([[
-              { data: "App Name", header: true },
-              { data: "Flavor", header: true },
-              { data: "Format", header: true },
-              ...matrix.map(item => [
-                { data: item.appName },
-                { data: item.packageFlavor },
-                { data: item.packageFormat },
-              ]).flat()
-            ]]);
+            await core.summary
+              .addRaw(`Beginning a ${process.env.releaseType} build with the following configurations:`, true)
+              .addTable([[
+                { data: "App Name", header: true },
+                { data: "Flavor", header: true },
+                { data: "Format", header: true },
+                ...matrix.map(item => [
+                  { data: item.appName },
+                  { data: item.packageFlavor },
+                  { data: item.packageFormat },
+                ]).flat()
+              ]])
+              .write();
             core.setFailed("test");
 
   build_unsigned:
@@ -327,6 +329,8 @@ jobs:
           script: |
             let assets = JSON.parse(process.env.assets);
 
-            core.summary.addRaw(`Release `);
-            core.summary.addLink(process.env.fullVersionName, process.env.releaseUrl);
-            core.summary.addRaw(`completed with tag ${process.env.tagName} (${context.sha})`, true);
+            await core.summary
+              .addRaw(`Release `)
+              .addLink(process.env.fullVersionName, process.env.releaseUrl)
+              .addRaw(`completed with tag ${process.env.tagName} (${context.sha})`, true)
+              .write();
