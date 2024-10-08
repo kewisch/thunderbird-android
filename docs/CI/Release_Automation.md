@@ -26,8 +26,10 @@ The variables set in these environments are non-sensitive and are used by the bu
   ```yaml
   - packageFormat: bundle
     packageFlavor: full
+    appName: thunderbird
   - packageFormat: apk
     packageFlavor: foss
+    appName: k9mail
   ```
   That would build `bundleFullBeta` and `assembleFossBeta`.
 
@@ -69,3 +71,10 @@ to generate a token with the appropriate permissions to create and tag a Github 
 ### App Permissions
 
 **TODO**
+
+
+
+### NOTES
+
+
+* 
