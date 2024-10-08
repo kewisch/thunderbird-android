@@ -265,18 +265,18 @@ jobs:
 
           cat $GITHUB_OUTPUT
 
-  #    - name: Rename release asset
-  #      id: rename
-  #      shell: bash
-  #      env:
-  #        VERSION_NAME=${{ steps.apkinfo.outputs.VERSION_NAME }}
-  #      run: |
-  #        APK_FILE="${APP_NAME}-${PACKAGE_FLAVOR}-${RELEASE_TYPE}-signed.apk"
-  #        APK_FILE_PRETTY="${APP_NAME/app-/}-${VERSION_NAME}.apk"
-  #        mv ${UPLOADS}/${APK_FILE} ${UPLOADS}/${APK_FILE_PRETTY}
+      - name: Rename release assets
+        id: rename
+        shell: bash
+        env:
+          VERSION_NAME=${{ steps.apkinfo.outputs.VERSION_NAME }}
+        run: |
+          APK_FILE="${APP_NAME}-${PACKAGE_FLAVOR}-${RELEASE_TYPE}-signed.apk"
+          APK_FILE_PRETTY="${APP_NAME}-${VERSION_NAME}.apk"
+          mv uploads/${APK_FILE} ${UPLOADS}/${APK_FILE_PRETTY}
 
-  #        echo "APK_FILE=${APK_FILE_PRETTY}" >> $GITHUB_OUTPUT
-  #        ls -l ${UPLOADS}/${APK_FILE_PRETTY}
+          echo "APK_FILE=${APK_FILE_PRETTY}" >> $GITHUB_OUTPUT
+          ls -l uploads/${APK_FILE_PRETTY}
 
   #    - name: App Token Generate
   #      uses: actions/create-github-app-token@v1
@@ -285,14 +285,14 @@ jobs:
   #        app-id: ${{ vars.RELEASER_APP_CLIENT_ID }}
   #        private-key: ${{ secrets.RELEASER_APP_PRIVATE_KEY }}
 
-  #    - name: Publish
-  #      uses: softprops/action-gh-release@c062e08bd532815e2082a85e87e3ef29c3e6d191 # v2.0.8
-  #      with:
-  #        token: ${{ steps.app-token.outputs.token }}
-  #        target_commitish: ${{ github.sha }}
-  #        tag_name: ${{ steps.apkinfo.outputs.TAG_NAME }}
-  #        name: ${{ steps.apkinfo.outputs.FULL_VERSION_NAME }}
-  #        prelease: ${{ env.RELEASE_TYPE != "release" }}
-  #        fail_on_unmatched_files: true
-  #        files: |
-  #          ${{ env.UPLOADS }}/${{ steps.rename.outputs.APK_FILE }}
+      - name: Publish
+        uses: softprops/action-gh-release@c062e08bd532815e2082a85e87e3ef29c3e6d191 # v2.0.8
+        with:
+          #token: ${{ steps.app-token.outputs.token }}
+          target_commitish: ${{ github.sha }}
+          tag_name: ${{ steps.apkinfo.outputs.TAG_NAME }}
+          name: ${{ steps.apkinfo.outputs.FULL_VERSION_NAME }}
+          prelease: ${{ env.RELEASE_TYPE != "release" }}
+          fail_on_unmatched_files: true
+          files: |
+            uploads/${{ steps.rename.outputs.APK_FILE }}
