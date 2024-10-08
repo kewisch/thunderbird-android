@@ -292,7 +292,7 @@ jobs:
           target_commitish: ${{ github.sha }}
           tag_name: ${{ steps.apkinfo.outputs.TAG_NAME }}
           name: ${{ steps.apkinfo.outputs.FULL_VERSION_NAME }}
-          prelease: ${{ env.RELEASE_TYPE != "release" }}
+          prerelease: ${{ env.RELEASE_TYPE != 'release' }}
           fail_on_unmatched_files: true
           files: |
             uploads/${{ steps.rename.outputs.APK_FILE }}
