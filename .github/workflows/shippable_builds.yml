@@ -63,138 +63,176 @@ jobs:
             ]);
             core.setFailed("test");
 
-
-  build_unsigned:
-    name: Build Unsigned
+ build_unsigned:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
     needs: [dump_config, get_environment]
-    strategy:
-      matrix:
-        include: "${{ fromJSON(needs.dump_config.outputs.matrixInclude) }}"
-    environment: ${{ needs.get_environment.outputs.releaseEnv }}
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Copy CI gradle.properties
-        shell: bash
-        run: mkdir -p ~/.gradle ; cp .github/ci-gradle.properties ~/.gradle/gradle.properties
-
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 17
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Build It
-        shell: bash
-        env:
-          PACKAGE_FORMAT: ${{ matrix.packageFormat }}
-          PACKAGE_FLAVOR: ${{ matrix.packageFlavor }}
-          APP_NAME: ${{ matrix.appName }}
-          RELEASE_TYPE: ${{ vars.RELEASE_TYPE }}
-        run: |
-          if [[ "$APP_NAME" = "thunderbird" && "$PACKAGE_FORMAT" = "apk" ]]; then
-            BUILD_COMMAND="assemble${PACKAGE_FLAVOR^}${RELEASE_TYPE^}"
-          elif [[ "$APP_NAME" = "thunderbird" && "${PACKAGE_FORMAT}" = "bundle" ]]; then
-            BUILD_COMMAND="bundle${PACKAGE_FLAVOR^}${RELEASE_TYPE^}"
-          elif [[ "$APP_NAME" = "k9mail" ]]; then
-            BUILD_COMMAND="assembleRelease"
-          fi
-
-          echo "BUILDING: :app-${APP_NAME}:${BUILD_COMMAND}"
-          ./gradlew clean :app-${APP_NAME}:${BUILD_COMMAND} --no-build-cache --no-configuration-cache
-          echo "Status: $?"
-
-      - name: Move apps to upload directory
-        shell: bash
-        env:
-          PACKAGE_FORMAT: ${{ matrix.packageFormat }}
-          PACKAGE_FLAVOR: ${{ matrix.packageFlavor }}
-          APP_NAME: ${{ matrix.appName }}
-          RELEASE_TYPE: ${{ vars.RELEASE_TYPE }}
-          UPLOAD_PATH: "uploads"
-        run: |
-          OUT_BASE=app-${APP_NAME}/build/outputs/${PACKAGE_FORMAT}
-
-          if [[ "$APP_NAME" = "thunderbird" && "$PACKAGE_FORMAT" = "apk" ]]; then
-            OUT_PATH="${OUT_BASE}/${PACKAGE_FLAVOR}/${RELEASE_TYPE}"
-            OUT_FILE="app-${APP_NAME}-${PACKAGE_FLAVOR}-${RELEASE_TYPE}-unsigned.apk"
-            UPLOAD_FILE="${APP_NAME}-${PACKAGE_FLAVOR}-${RELEASE_TYPE}.apk"
-          elif [[ "$APP_NAME" = "thunderbird" && "${PACKAGE_FORMAT}" = "bundle" ]]; then
-            OUT_PATH="${OUT_BASE}/${PACKAGE_FLAVOR}${RELEASE_TYPE^}"
-            OUT_FILE="app-${APP_NAME}-${PACKAGE_FLAVOR}-${RELEASE_TYPE}.aab"
-            UPLOAD_FILE="${APP_NAME}-${PACKAGE_FLAVOR}-${RELEASE_TYPE}.aab"
-          elif [[ "$APP_NAME" = "k9mail" ]]; then
-            OUT_PATH="${OUT_BASE}/release"
-            OUT_FILE="app-${APP_NAME}-release-unsigned.apk"
-            UPLOAD_FILE="${APP_NAME}-default-${RELEASE_TYPE}.apk"
-          else
-            echo "PACKAGE_FORMAT $PACKAGE_FORMAT is unknown. Exiting."
-            exit 23
-          fi
-
-          mkdir -p "${UPLOAD_PATH}"
-
-          if [[ -f "${OUT_PATH}/${OUT_FILE}" ]]; then
-            mv -f "${OUT_PATH}/${OUT_FILE}" "${UPLOAD_PATH}/${UPLOAD_FILE}"
-          else
-            echo "Build file ${OUT_PATH}/${OUT_FILE} not found. Exiting."
-            ls -l ${OUT_PATH}
-            exit 24
-          fi
-          echo "Upload contents:"
-          ls -l ${UPLOAD_PATH}/
+      - run: |
+          wget -O k9mail-default-beta-signed.apk https://github.com/thunderbird/thunderbird-android/releases/download/K9MAIL_8_0b1/k9-8.0b1.apk
+          wget -O thunderbird-foss-beta-signed.apk https://github.com/thunderbird/thunderbird-android/releases/download/THUNDERBIRD_8_0b2/thunderbird-8.0b2.apk
+          wget -O thunderbird-full-beta-signed.aab https://mozilla.kewis.ch/thunderbird-full-beta.aab
 
       - name: Upload unsigned
         uses: actions/upload-artifact@v4
-        env:
-          UPLOAD_PATH: "uploads"
         with:
-          name: unsigned-${{ matrix.appName }}-${{ matrix.packageFormat }}-${{ matrix.packageFlavor || 'default' }}
-          path: ${{ env.UPLOAD_PATH }}/
+          name: signed-thunderbird-apk-foss
+          path: thunderbird-foss-beta-signed.apk
+          if-no-files-found: error
+
+      - name: Upload unsigned
+        uses: actions/upload-artifact@v4
+        with:
+          name: signed-thunderbird-bundle-full
+          path: thunderbird-full-beta-signed.aab
+          if-no-files-found: error
+
+      - name: Upload unsigned
+        uses: actions/upload-artifact@v4
+        with:
+          name: signed-k9mail-apk-default
+          path: k9mail-default-beta-signed.apk
           if-no-files-found: error
 
   sign_mobile:
-    name: Sign Packages
+    needs: [build_unsigned]
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include: "${{ fromJSON(needs.dump_config.outputs.matrixInclude) }}"
-    environment: ${{ matrix.appName }}_${{ needs.dump_config.outputs.releaseType }}_${{ matrix.packageFlavor || 'default' }}
-    needs: [build_unsigned, dump_config]
-    env:
-      RELEASE_TYPE: ${{ needs.dump_config.outputs.releaseType }}
     steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: unsigned-${{ matrix.appName }}-${{ matrix.packageFormat }}-${{ matrix.packageFlavor || 'default' }}
-          path: uploads/
-
-      - uses: noriban/sign-android-release@5f144321d3c7c2233266e78b42360345d8bbe403   # v5.1
-        name: Sign package
-        with:
-          releaseDirectory: uploads/
-          signingKeyBase64: ${{ secrets.SIGNING_KEY }}
-          alias: ${{ secrets.KEY_ALIAS }}
-          keyPassword: ${{ secrets.KEY_PASSWORD }}
-          keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
-
-      - name: Remove JKS file
+      - name: Temp
         shell: bash
         run: |
-          rm -f uploads/*.jks
+          true
 
-      - name: Upload signed
-        uses: actions/upload-artifact@v4
-        with:
-          name: signed-${{ matrix.appName }}-${{ matrix.packageFormat }}-${{ matrix.packageFlavor || 'default' }}
-          if-no-files-found: error
-          path: |
-            uploads/*-signed.apk
-            uploads/*.aab
+  #build_unsigned:
+  #  name: Build Unsigned
+  #  runs-on: ubuntu-latest
+  #  timeout-minutes: 90
+  #  needs: [dump_config, get_environment]
+  #  strategy:
+  #    matrix:
+  #      include: "${{ fromJSON(needs.dump_config.outputs.matrixInclude) }}"
+  #  environment: ${{ needs.get_environment.outputs.releaseEnv }}
+  #  steps:
+  #    - uses: actions/checkout@v4
+
+  #    - name: Copy CI gradle.properties
+  #      shell: bash
+  #      run: mkdir -p ~/.gradle ; cp .github/ci-gradle.properties ~/.gradle/gradle.properties
+
+  #    - uses: actions/setup-java@v4
+  #      with:
+  #        distribution: temurin
+  #        java-version: 17
+
+  #    - name: Setup Gradle
+  #      uses: gradle/actions/setup-gradle@v4
+
+  #    - name: Build It
+  #      shell: bash
+  #      env:
+  #        PACKAGE_FORMAT: ${{ matrix.packageFormat }}
+  #        PACKAGE_FLAVOR: ${{ matrix.packageFlavor }}
+  #        APP_NAME: ${{ matrix.appName }}
+  #        RELEASE_TYPE: ${{ vars.RELEASE_TYPE }}
+  #      run: |
+  #        if [[ "$APP_NAME" = "thunderbird" && "$PACKAGE_FORMAT" = "apk" ]]; then
+  #          BUILD_COMMAND="assemble${PACKAGE_FLAVOR^}${RELEASE_TYPE^}"
+  #        elif [[ "$APP_NAME" = "thunderbird" && "${PACKAGE_FORMAT}" = "bundle" ]]; then
+  #          BUILD_COMMAND="bundle${PACKAGE_FLAVOR^}${RELEASE_TYPE^}"
+  #        elif [[ "$APP_NAME" = "k9mail" ]]; then
+  #          BUILD_COMMAND="assembleRelease"
+  #        fi
+
+  #        echo "BUILDING: :app-${APP_NAME}:${BUILD_COMMAND}"
+  #        ./gradlew clean :app-${APP_NAME}:${BUILD_COMMAND} --no-build-cache --no-configuration-cache
+  #        echo "Status: $?"
+
+  #    - name: Move apps to upload directory
+  #      shell: bash
+  #      env:
+  #        PACKAGE_FORMAT: ${{ matrix.packageFormat }}
+  #        PACKAGE_FLAVOR: ${{ matrix.packageFlavor }}
+  #        APP_NAME: ${{ matrix.appName }}
+  #        RELEASE_TYPE: ${{ vars.RELEASE_TYPE }}
+  #        UPLOAD_PATH: "uploads"
+  #      run: |
+  #        OUT_BASE=app-${APP_NAME}/build/outputs/${PACKAGE_FORMAT}
+
+  #        if [[ "$APP_NAME" = "thunderbird" && "$PACKAGE_FORMAT" = "apk" ]]; then
+  #          OUT_PATH="${OUT_BASE}/${PACKAGE_FLAVOR}/${RELEASE_TYPE}"
+  #          OUT_FILE="app-${APP_NAME}-${PACKAGE_FLAVOR}-${RELEASE_TYPE}-unsigned.apk"
+  #          UPLOAD_FILE="${APP_NAME}-${PACKAGE_FLAVOR}-${RELEASE_TYPE}.apk"
+  #        elif [[ "$APP_NAME" = "thunderbird" && "${PACKAGE_FORMAT}" = "bundle" ]]; then
+  #          OUT_PATH="${OUT_BASE}/${PACKAGE_FLAVOR}${RELEASE_TYPE^}"
+  #          OUT_FILE="app-${APP_NAME}-${PACKAGE_FLAVOR}-${RELEASE_TYPE}.aab"
+  #          UPLOAD_FILE="${APP_NAME}-${PACKAGE_FLAVOR}-${RELEASE_TYPE}.aab"
+  #        elif [[ "$APP_NAME" = "k9mail" ]]; then
+  #          OUT_PATH="${OUT_BASE}/release"
+  #          OUT_FILE="app-${APP_NAME}-release-unsigned.apk"
+  #          UPLOAD_FILE="${APP_NAME}-default-${RELEASE_TYPE}.apk"
+  #        else
+  #          echo "PACKAGE_FORMAT $PACKAGE_FORMAT is unknown. Exiting."
+  #          exit 23
+  #        fi
+
+  #        mkdir -p "${UPLOAD_PATH}"
+
+  #        if [[ -f "${OUT_PATH}/${OUT_FILE}" ]]; then
+  #          mv -f "${OUT_PATH}/${OUT_FILE}" "${UPLOAD_PATH}/${UPLOAD_FILE}"
+  #        else
+  #          echo "Build file ${OUT_PATH}/${OUT_FILE} not found. Exiting."
+  #          ls -l ${OUT_PATH}
+  #          exit 24
+  #        fi
+  #        echo "Upload contents:"
+  #        ls -l ${UPLOAD_PATH}/
+
+  #    - name: Upload unsigned
+  #      uses: actions/upload-artifact@v4
+  #      env:
+  #        UPLOAD_PATH: "uploads"
+  #      with:
+  #        name: unsigned-${{ matrix.appName }}-${{ matrix.packageFormat }}-${{ matrix.packageFlavor || 'default' }}
+  #        path: ${{ env.UPLOAD_PATH }}/
+  #        if-no-files-found: error
+
+  #sign_mobile:
+  #  name: Sign Packages
+  #  runs-on: ubuntu-latest
+  #  strategy:
+  #    matrix:
+  #      include: "${{ fromJSON(needs.dump_config.outputs.matrixInclude) }}"
+  #  environment: ${{ matrix.appName }}_${{ needs.dump_config.outputs.releaseType }}_${{ matrix.packageFlavor || 'default' }}
+  #  needs: [build_unsigned, dump_config]
+  #  env:
+  #    RELEASE_TYPE: ${{ needs.dump_config.outputs.releaseType }}
+  #  steps:
+  #    - uses: actions/download-artifact@v4
+  #      with:
+  #        name: unsigned-${{ matrix.appName }}-${{ matrix.packageFormat }}-${{ matrix.packageFlavor || 'default' }}
+  #        path: uploads/
+
+  #    - uses: noriban/sign-android-release@5f144321d3c7c2233266e78b42360345d8bbe403   # v5.1
+  #      name: Sign package
+  #      with:
+  #        releaseDirectory: uploads/
+  #        signingKeyBase64: ${{ secrets.SIGNING_KEY }}
+  #        alias: ${{ secrets.KEY_ALIAS }}
+  #        keyPassword: ${{ secrets.KEY_PASSWORD }}
+  #        keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
+
+  #    - name: Remove JKS file
+  #      shell: bash
+  #      run: |
+  #        rm -f uploads/*.jks
+
+  #    - name: Upload signed
+  #      uses: actions/upload-artifact@v4
+  #      with:
+  #        name: signed-${{ matrix.appName }}-${{ matrix.packageFormat }}-${{ matrix.packageFlavor || 'default' }}
+  #        if-no-files-found: error
+  #        path: |
+  #          uploads/*-signed.apk
+  #          uploads/*.aab
 
   pre_publish:
     name: Wait for Approval
