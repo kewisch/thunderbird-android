@@ -246,7 +246,6 @@ jobs:
 
       - name: Get APK Info
         id: apkinfo
-        env:
         shell: bash
         run: |
           APK_FILE="uploads/${APP_NAME}-${PACKAGE_FLAVOR}-${RELEASE_TYPE}-signed.apk"
