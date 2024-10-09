@@ -394,7 +394,7 @@ def main():
         )
 
     if args.all_environments:
-        skipset = set(args.skip)
+        skipset = set(args.skip or [])
         # All environments creation mode
         if "publish_hold" in skipset:
             print("Skipping environment publish_hold")
