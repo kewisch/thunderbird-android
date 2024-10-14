@@ -88,11 +88,15 @@ jobs:
                   { data: "App Name", header: true },
                   { data: "Flavor", header: true },
                   { data: "Format", header: true },
+                  { data: "Release Target", header: true },
+                  { data: "Play Store Track", header: true },
                 ],
                 ...matrixFull.map(item => [
                   { data: item.appName },
                   { data: item.packageFlavor || "default" },
                   { data: item.packageFormat },
+                  { data: item.releaseTarget?.replace(/\|/g, ", ") || "artifact only" },
+                  { data: item.playTargetTrack || "none" },
                 ])
               ])
               .write();
@@ -123,6 +127,8 @@ jobs:
       - name: Checkout repository
         if: ${{ contains(matrix.releaseTarget, 'github') }}
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Copy CI gradle.properties
         if: ${{ contains(matrix.releaseTarget, 'github') }}
@@ -144,18 +150,25 @@ jobs:
 
       - name: Get application info
         id: appinfo
+        shell: bash
         if: ${{ contains(matrix.releaseTarget, 'github') }}
         env:
           RELEASE_TYPE: ${{ vars.RELEASE_TYPE }}
           PACKAGE_FLAVOR: ${{ matrix.packageFlavor }}
           APP_NAME: ${{ matrix.appName }}
         run: |
+          if [[ "${APP_NAME}" == "k9mail" && "${RELEASE_TYPE}" == "beta" ]]; then
+            # k9mail uses release for betas as well. Later on we should align the structures and
+            # remove this hack
+            RELEASE_TYPE=release
+          fi
+
           ./gradlew :app-${APP_NAME}:printVersionInfo -PbuildType=${RELEASE_TYPE} -PflavorName=${PACKAGE_FLAVOR}
-          cat $GITHUB_OUTPUT
 
       - name: Bump version code
         id: bump_version_code
         if: ${{ contains(matrix.releaseTarget, 'github') }}
+        shell: bash
         env:
           APP_NAME: ${{ matrix.appName }}
           OLD_VERSION_CODE: ${{ steps.appinfo.outputs.VERSION_CODE }}
@@ -171,6 +184,7 @@ jobs:
       - name: Bump version suffix
         id: bump_version_suffix
         if: ${{ contains(matrix.releaseTarget, 'github') && vars.RELEASE_TYPE == 'beta' && matrix.appName == 'thunderbird' }}
+        shell: bash
         env:
           APP_NAME: ${{ matrix.appName }}
           OLD_VERSION_SUFFIX: ${{ steps.appinfo.outputs.VERSION_NAME_SUFFIX }}
@@ -187,42 +201,46 @@ jobs:
 
       - name: Render Release Notes
         if: ${{ contains(matrix.releaseTarget, 'github') }}
+        shell: bash
         env:
           APPLICATION_ID: ${{ steps.appinfo.outputs.APPLICATION_ID }}
-          APPLICATION_LABEL: ${{ steps.appinfo.outputs.APPLICATION_LABEL }}}
+          APPLICATION_LABEL: ${{ steps.appinfo.outputs.APPLICATION_LABEL }}
           VERSION_CODE: ${{ steps.bump_version_code.outputs.CODE }}
-          FULL_VERSION_NAME: ${{ steps.appinfo.outputs.VERSION_NAME }}${{ steps.bump_version_suffix.SUFFIX }}
+          FULL_VERSION_NAME: ${{ steps.appinfo.outputs.VERSION_NAME }}${{ steps.bump_version_suffix.outputs.SUFFIX }}
         run: |
-          echo "<h2>${APPLICATION_LABEL} ${FULL_VERSION_NAME} Release Notes </h2>" | tee -a $GITHUB_STEP_SUMMARY
+          echo "<h2>${APPLICATION_LABEL} ${FULL_VERSION_NAME} Release Notes </h2><pre>" | tee -a $GITHUB_STEP_SUMMARY
           mkdir -p ./app-metadata/${APPLICATION_ID}/en-US/changelogs
-          python ./scripts/render-notes.py ${APPLICATION_ID} ${VERSION_NAME} ${VERSION_CODE} | tee -a $GITHUB_STEP_SUMMARY
+          python ./scripts/render-notes.py ${APPLICATION_ID} ${FULL_VERSION_NAME} ${VERSION_CODE} | tee -a $GITHUB_STEP_SUMMARY
+          echo "</pre>" | tee -a $GITHUB_STEP_SUMMARY
 
       - name: Release Commits
         if: ${{ contains(matrix.releaseTarget, 'github') }}
         id: commit
+        shell: bash
         env:
-          APPLICATION_LABEL: ${{ steps.appinfo.outputs.APPLICATION_LABEL }}}
+          APPLICATION_LABEL: ${{ steps.appinfo.outputs.APPLICATION_LABEL }}
           APPLICATION_ID: ${{ steps.appinfo.outputs.APPLICATION_ID }}
           APP_NAME: ${{ matrix.appName }}
-          VERSION_NAME: ${{ steps.appinfo.outputs.VERSION_NAME }}${{ steps.bump_version_suffix.outputs.SUFFIX }}
+          FULL_VERSION_NAME: ${{ steps.appinfo.outputs.VERSION_NAME }}${{ steps.bump_version_suffix.outputs.SUFFIX }}
         run: |
           git config --global user.name "GitHub Actions Bot"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # We need the metadat to point to the right application for the release commit
+          # We need the metadata to point to the right application for the release commit
           rm metadata
           ln -sf app-metadata/${APPLICATION_ID} metadata
 
           # Add changelogs, build version changes and metadata symlink
           git add ./app-metadata/${APPLICATION_ID}/en-US/changelogs/*
+          git add ./app-${APP_NAME}/src/main/res/raw/changelog_master.xml
           git add ./app-${APP_NAME}/build.gradle.kts
           git add metadata
 
           # Ready to commit. Make sure to pull again to reduce likelihood of race conditions
           git status
           git pull
-          git commit -m "Release: ${APPLICATION_LABEL} ${VERSION_NAME}${VERSION_SUFFIX}"
-          git log -n 10
+          git commit -m "Release: ${APPLICATION_LABEL} ${FULL_VERSION_NAME}"
+          git log -n 5
 
           set +e
           git push
@@ -250,6 +268,7 @@ jobs:
     steps:
       - name: Get release sha
         id: sha
+        shell: bash
         env:
           THUNDERBIRD_SHA: ${{ needs.release_commit.outputs.THUNDERBIRD_SHA }}
           K9MAIL_SHA: ${{ needs.release_commit.outputs.K9MAIL_SHA }}
@@ -265,7 +284,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          sha: ${{ steps.sha.outputs.app_sha }}
+          ref: ${{ steps.sha.outputs.app_sha }}
 
       - name: Copy CI gradle.properties
         shell: bash
@@ -445,31 +464,33 @@ jobs:
             AAPT=${LATEST_BUILD_TOOLS}/aapt
 
             NAME=$(${AAPT} dump badging $PKG_FILE | sed -n "s/^application-label:'\([^']*\)'.*$/\1/p")
-            VERSION=$(${AAPT} dump badging $PKG_FILE | sed -n "s/^package:.*versionName='\([^']*\)'.*$/\1/p")
-            PACKAGE_ID=$(${AAPT} dump badging $PKG_FILE | sed -n "s/^package: name='\([^']*\)'.*$/\1/p")
+            VERSION_NAME=$(${AAPT} dump badging $PKG_FILE | sed -n "s/^package:.*versionName='\([^']*\)'.*$/\1/p")
+            VERSION_CODE=$(${AAPT} dump badging $PKG_FILE | sed -n "s/^package:.*versionCode='\([^']*\)'.*$/\1/p")
+            APPLICATION_ID=$(${AAPT} dump badging $PKG_FILE | sed -n "s/^package: name='\([^']*\)'.*$/\1/p")
           elif [[ "${PACKAGE_FORMAT}" == "aab" ]]; then
             if [ ! -f bundletool.jar ]; then
               gh release download -R google/bundletool -p 'bundletool-all-*.jar' -O bundletool.jar
             fi
             BUNDLETOOL="java -jar bundletool.jar"
 
-            VERSION=$(${BUNDLETOOL} dump manifest --bundle ${PKG_FILE} --xpath '/manifest/@android:versionName')
-            PACKAGE_ID=$(${BUNDLETOOL} dump manifest --bundle ${PKG_FILE} --xpath '/manifest/@package')
+            VERSION_NAME=$(${BUNDLETOOL} dump manifest --bundle ${PKG_FILE} --xpath '/manifest/@android:versionName')
+            VERSION_CODE=$(${BUNDLETOOL} dump manifest --bundle ${PKG_FILE} --xpath '/manifest/@android:versionCode')
+            APPLICATION_ID=$(${BUNDLETOOL} dump manifest --bundle ${PKG_FILE} --xpath '/manifest/@package')
 
             # Unfortunately no application label in the bundle
-            case "$PACKAGE_ID" in
+            case "$APPLICATION_ID" in
               net.thunderbird.android) NAME="Thunderbird" ;;
               net.thunderbird.android.beta) NAME="Thunderbird Beta" ;;
               net.thunderbird.android.daily) NAME="Thunderbird Daily" ;;
-              wtf.says.test) NAME="Test" ;;
               com.fsck.k9) NAME="K-9 Mail" ;;
             esac
           fi
 
           echo "TAG_NAME=${APP_NAME^^}_${VERSION//./_}" >> $GITHUB_OUTPUT
           echo "FULL_VERSION_NAME=${NAME} ${VERSION}" >> $GITHUB_OUTPUT
-          echo "VERSION_NAME=${VERSION}" >> $GITHUB_OUTPUT
-          echo "PACKAGE_ID=${PACKAGE_ID}" >> $GITHUB_OUTPUT
+          echo "VERSION_NAME=${VERSION_NAME}" >> $GITHUB_OUTPUT
+          echo "VERSION_CODE=${VERSION_CODE}" >> $GITHUB_OUTPUT
+          echo "APPLICATION_ID=${APPLICATION_ID}" >> $GITHUB_OUTPUT
 
           cat $GITHUB_OUTPUT
 
@@ -525,6 +546,9 @@ jobs:
 
       - name: Adjust release notes for play store upload
         if: ${{ github.events.inputs.skipGooglePlay != 'true' && contains(matrix.releaseTarget, 'play') && matrix.playTargetTrack }}
+        env:
+          VERSION_CODE: ${{ steps.pkginfo.outputs.VERSION_CODE }}
+          APPLICATION_ID: ${{ steps.pkginfo.outputs.APPLICATION_ID }}
         run: |
           # r0adkll/upload-google-play expects the release notes in a different structure
           mkdir whatsnew
@@ -537,7 +561,7 @@ jobs:
       #  if: ${{ github.events.inputs.skipGooglePlay != 'true' && contains(matrix.releaseTarget, 'play') && matrix.playTargetTrack }}
       #  with:
       #    serviceAccountJsonPlainText: ${{ secrets.PLAY_STORE_ACCOUNT }}
-      #    packageName: ${{ steps.pkginfo.outputs.PACKAGE_ID }}
+      #    packageName: ${{ steps.pkginfo.outputs.APPLICATION_ID }}
       #    track: ${{ matrix.playTargetTrack }}
       #    releaseName: ${{ steps.pkginfo.outputs.VERSION_NAME }}
       #    status: completed
@@ -553,12 +577,12 @@ jobs:
           fullVersionName: ${{ steps.pkginfo.outputs.FULL_VERSION_NAME }}
           ghReleaseUrl: ${{ steps.publish_gh.outputs.url }}
           playTargetTrack: ${{ matrix.playTargetTrack }}
-          packageId: ${{ steps.pkginfo.outputs.PACKAGE_ID }}
+          applicationId: ${{ steps.pkginfo.outputs.APPLICATION_ID }}
           app_sha: ${{ steps.sha.outputs.app_sha }}
         with:
           script: |
             await core.summary
-              .addHeading(`${process.env.fullVersionName} (${process.env.packageId})`)
+              .addHeading(`${process.env.fullVersionName} (${process.env.applicationId})`)
               .addRaw(`Tag ${process.env.tagName} at `)
               .addLink(process.env.app_sha, `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/commit/${process.env.app_sha}`)
               .addEOL()
