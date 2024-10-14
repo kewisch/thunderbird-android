@@ -121,8 +121,8 @@ jobs:
     permissions:
       contents: write
     outputs:
-      K9MAIL_SHA: ${{ steps.commit.outputs.K9MAIL_SHA }}
-      THUNDERBIRD_SHA: ${{ steps.commit.outputs.THUNDERBIRD_SHA }}
+      k9mail_sha: ${{ steps.commit.outputs.k9mail_sha }}
+      thunderbird_sha: ${{ steps.commit.outputs.thunderbird_sha }}
     steps:
       - name: Checkout repository
         if: ${{ contains(matrix.releaseTarget, 'github') }}
@@ -270,8 +270,9 @@ jobs:
         id: sha
         shell: bash
         env:
-          THUNDERBIRD_SHA: ${{ needs.release_commit.outputs.THUNDERBIRD_SHA }}
-          K9MAIL_SHA: ${{ needs.release_commit.outputs.K9MAIL_SHA }}
+          THUNDERBIRD_SHA: ${{ needs.release_commit.outputs.thunderbird_sha }}
+          K9MAIL_SHA: ${{ needs.release_commit.outputs.k9mail_sha }}
+          APP_NAME: ${{ matrix.appName }}
         run: |
           case "${APP_NAME}" in
             thunderbird) APP_SHA=$THUNDERBIRD_SHA ;;
@@ -463,10 +464,10 @@ jobs:
             LATEST_BUILD_TOOLS=$(ls -d ${ANDROID_SDK_ROOT}/build-tools/* | sort -V | tail -n1)
             AAPT=${LATEST_BUILD_TOOLS}/aapt
 
-            NAME=$(${AAPT} dump badging $PKG_FILE | sed -n "s/^application-label:'\([^']*\)'.*$/\1/p")
             VERSION_NAME=$(${AAPT} dump badging $PKG_FILE | sed -n "s/^package:.*versionName='\([^']*\)'.*$/\1/p")
             VERSION_CODE=$(${AAPT} dump badging $PKG_FILE | sed -n "s/^package:.*versionCode='\([^']*\)'.*$/\1/p")
             APPLICATION_ID=$(${AAPT} dump badging $PKG_FILE | sed -n "s/^package: name='\([^']*\)'.*$/\1/p")
+            APPLICATION_LABEL=$(${AAPT} dump badging $PKG_FILE | sed -n "s/^application-label:'\([^']*\)'.*$/\1/p")
           elif [[ "${PACKAGE_FORMAT}" == "aab" ]]; then
             if [ ! -f bundletool.jar ]; then
               gh release download -R google/bundletool -p 'bundletool-all-*.jar' -O bundletool.jar
@@ -479,15 +480,15 @@ jobs:
 
             # Unfortunately no application label in the bundle
             case "$APPLICATION_ID" in
-              net.thunderbird.android) NAME="Thunderbird" ;;
-              net.thunderbird.android.beta) NAME="Thunderbird Beta" ;;
-              net.thunderbird.android.daily) NAME="Thunderbird Daily" ;;
-              com.fsck.k9) NAME="K-9 Mail" ;;
+              net.thunderbird.android) APPLICATION_LABEL="Thunderbird" ;;
+              net.thunderbird.android.beta) APPLICATION_LABEL="Thunderbird Beta" ;;
+              net.thunderbird.android.daily) APPLICATION_LABEL="Thunderbird Daily" ;;
+              com.fsck.k9) APPLICATION_LABEL="K-9 Mail" ;;
             esac
           fi
 
-          echo "TAG_NAME=${APP_NAME^^}_${VERSION//./_}" >> $GITHUB_OUTPUT
-          echo "FULL_VERSION_NAME=${NAME} ${VERSION}" >> $GITHUB_OUTPUT
+          echo "TAG_NAME=${APP_NAME^^}_${VERSION_NAME//./_}" >> $GITHUB_OUTPUT
+          echo "FULL_VERSION_NAME=${APPLICATION_LABEL} ${VERSION_NAME}" >> $GITHUB_OUTPUT
           echo "VERSION_NAME=${VERSION_NAME}" >> $GITHUB_OUTPUT
           echo "VERSION_CODE=${VERSION_CODE}" >> $GITHUB_OUTPUT
           echo "APPLICATION_ID=${APPLICATION_ID}" >> $GITHUB_OUTPUT
@@ -517,10 +518,11 @@ jobs:
 
       - name: Get release sha
         id: sha
+        shell: bash
         env:
+          THUNDERBIRD_SHA: ${{ needs.release_commit.outputs.thunderbird_sha }}
+          K9MAIL_SHA: ${{ needs.release_commit.outputs.k9mail_sha }}
           APP_NAME: ${{ matrix.appName }}
-          THUNDERBIRD_SHA: ${{ needs.release_commit.outputs.THUNDERBIRD_SHA }}
-          K9MAIL_SHA: ${{ needs.release_commit.outputs.K9MAIL_SHA }}
         run: |
           case "${APP_NAME}" in
             thunderbird) APP_SHA=$THUNDERBIRD_SHA ;;
