@@ -51,7 +51,8 @@ android {
         testApplicationId = "com.fsck.k9.tests"
 
         versionCode = 39004
-        versionName = "6.905-SNAPSHOT"
+        versionName = "8.0"
+        versionNameSuffix = "b1"
 
         // Keep in sync with the resource string array "supported_languages"
         resourceConfigurations.addAll(
@@ -182,8 +183,8 @@ tasks.create("printVersionInfo") {
                     APPLICATION_LABEL=${appName}
                     VERSION_CODE=${flavor.versionCode}
                     VERSION_NAME=${flavor.versionName}
-                    VERSION_NAME_SUFFIX=${variant.buildType.versionNameSuffix ?: ""}
-                    FULL_VERSION_NAME=${flavor.versionName}${variant.buildType.versionNameSuffix ?: ""}
+                    VERSION_NAME_SUFFIX=${flavor.versionNameSuffix ?: ""}
+                    FULL_VERSION_NAME=${flavor.versionName}${flavor.versionNameSuffix ?: ""}
                 """.trimIndent()
 
                 println(output)
