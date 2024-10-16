@@ -5,6 +5,13 @@
      Locale-specific versions are kept in res/raw-<locale qualifier>/changelog.xml.
 -->
 <changelog>
+    <release version="8.0b3" versioncode="39007" date="2024-10-15">
+        <change>Support Thunderbird with our new in-app financial contribution feature (work in progress)</change>
+        <change>OAuth support now available for Fastmail</change>
+        <change>Better guidance when using the import from app feature</change>
+        <change>Fixed account update issues, crashes, and improved message list spacing</change>
+        <change>Enforced email validation for better identity management</change>
+    </release>
     <release version="6.904" versioncode="39004" date="2024-06-27">
         <change>Fixed crash when split screen mode is enabled</change>
         <change>Updated translations</change>
