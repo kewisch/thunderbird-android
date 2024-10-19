@@ -87,6 +87,32 @@ jobs:
 
             core.setOutput("matrixInclude", matrixFull);
 
+      - name: Notify Build Start
+        if: ${{ vars.MATRIX_NOTIFY_ROOM && (vars.RELEASE_TYPE == 'beta' || vars.RELEASE_TYPE == 'release') }}
+        uses: kewisch/action-matrix-notify@v1
+        with:
+          matrixHomeserver: "mozilla.modular.im"
+          matrixRoomId: ${{ vars.MATRIX_NOTIFY_ROOM }}
+          matrixToken: ${{ secrets.MATRIX_NOTIFY_TOKEN }}
+          replaceUserMap: ${{ vars.MATRIX_USER_MAP }}
+          message: >-
+            🔵 [${{ vars.RELEASE_TYPE }} build ${{ github.run_number}}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            was started by @${{ github.actor }}
+
+      - name: Summary
+        uses: actions/github-script@v7
+        env:
+          matrixInclude: ${{ steps.dump.outputs.matrixInclude }}
+          releaseType: ${{ vars.RELEASE_TYPE }}
+          skipThunderbird: ${{ inputs.skipThunderbird }}
+          skipK9Mail: ${{ inputs.skipK9Mail }}
+        with:
+          script: |
+            let matrix = JSON.parse(process.env.matrixInclude);
+            let skipThunderbird = process.env.skipThunderbird == "true";
+            let skipK9Mail = process.env.skipK9Mail == "true";
+
+            // Summary
             await core.summary
               .addRaw(`Beginning a <b>${process.env.releaseType}</b> build with the following configurations:`, true)
               .addTable([
@@ -97,7 +123,7 @@ jobs:
                   { data: "Release Target", header: true },
                   { data: "Play Store Track", header: true },
                 ],
-                ...matrixFull.map(item => [
+                ...matrix.map(item => [
                   { data: item.appName },
                   { data: item.packageFlavor || "default" },
                   { data: item.packageFormat },
@@ -278,10 +304,10 @@ jobs:
           echo "${APP_NAME}_sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
 
   build_unsigned:
-    if: ${{ !failure() && !cancelled() }} # Run if release_commit is skipped
     name: Build Unsigned
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    if: ${{ !failure() && !cancelled() }} # Run if release_commit is skipped
     needs: [dump_config, get_environment, release_commit]
     strategy:
       matrix:
@@ -401,11 +427,12 @@ jobs:
   sign_mobile:
     name: Sign Packages
     runs-on: ubuntu-latest
+    if: ${{ !failure() && !cancelled() }} # Run if previous step is skipped
+    needs: [build_unsigned, dump_config]
     strategy:
       matrix:
         include: "${{ fromJSON(needs.dump_config.outputs.matrixInclude) }}"
     environment: ${{ matrix.appName }}_${{ needs.dump_config.outputs.releaseType }}_${{ matrix.packageFlavor || 'default' }}
-    needs: [build_unsigned, dump_config]
     env:
       RELEASE_TYPE: ${{ needs.dump_config.outputs.releaseType }}
     steps:
@@ -446,12 +473,28 @@ jobs:
             uploads/*.apk
             uploads/*.aab
 
+  pre_publish_notify:
+    name: Notify Publish Approval
+    needs: [dump_config, sign_mobile]
+    if: ${{ needs.dump_config.outputs.releaseType == 'beta' || needs.dump_config.outputs.releaseType == 'release' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: kewisch/action-matrix-notify@v1
+        with:
+          matrixHomeserver: "mozilla.modular.im"
+          matrixRoomId: ${{ vars.MATRIX_NOTIFY_ROOM }}
+          matrixToken: ${{ secrets.MATRIX_NOTIFY_TOKEN }}
+          replaceUserMap: ${{ vars.MATRIX_USER_MAP }}
+          message: >-
+            🟡 [${{ needs.dump_config.outputs.releaseType }} build ${{ github.run_number}}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            waiting for publish approval (triggered by @${{ github.actor }})
+
   pre_publish:
     # This is a holding job meant to require approval before proceeding with the publishing jobs below
     # The environment has a deployment protection rule requiring approval from a set of named reviewers
     # before proceeding.
     name: Wait for Approval
-    needs: [dump_config, sign_mobile]
+    needs: [pre_publish_notify]
     if: ${{ needs.dump_config.outputs.releaseType == 'beta' || needs.dump_config.outputs.releaseType == 'release' }}
     environment: publish_hold
     runs-on: ubuntu-latest
@@ -603,6 +646,17 @@ jobs:
           releaseFiles: |
             uploads/${{ steps.rename.outputs.PKG_FILE }}
 
+      - name: Notify Release URL
+        if: ${{ vars.MATRIX_NOTIFY_ROOM && contains(matrix.releaseTarget, 'github') }}
+        uses: kewisch/action-matrix-notify@v1
+        with:
+          matrixHomeserver: "mozilla.modular.im"
+          matrixRoomId: ${{ vars.MATRIX_NOTIFY_ROOM }}
+          matrixToken: ${{ secrets.MATRIX_NOTIFY_TOKEN }}
+          message: >-
+            [${{ needs.dump_config.outputs.releaseType }} build ${{ github.run_number}}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            ${{ steps.pkginfo.outputs.FULL_VERSION_NAME }} [is available](${{ steps.publish_gh.outputs.url }})
+
       - name: Summary
         uses: actions/github-script@v7
         env:
@@ -632,3 +686,77 @@ jobs:
             if (process.env.playTargetTrack) {
               await core.summary.addRaw(`Released to the <b>${process.env.playTargetTrack}</b> track on Google Play`, true).write();
             }
+
+  notify_result:
+    name: Notify Build Result
+    if: ${{ always() && vars.MATRIX_NOTIFY_ROOM }}
+    needs: [dump_config, release_commit, build_unsigned, sign_mobile, publish_release]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get previous workflow status
+        uses: Mercymeilya/last-workflow-status@3418710aefe8556d73b6f173a0564d38bcfd9a43
+        id: last_status
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Info
+        uses: actions/github-script@v7
+        id: info
+        env:
+          needs: ${{ toJSON(needs) }}
+        with:
+          script: |
+            let needs = JSON.parse(process.env.needs);
+            for (let [job, need] of Object.entries(needs)) {
+              if (need.result == 'failure') {
+                failures.push(job);
+              }
+            }
+            core.setOutput("fail_steps", failures.join(`, `));
+
+
+      - name: Notify Failure
+        if: ${{ contains(needs.*.result, 'failure') }}
+        uses: kewisch/action-matrix-notify@v1
+        with:
+          matrixHomeserver: "mozilla.modular.im"
+          matrixRoomId: ${{ vars.MATRIX_NOTIFY_ROOM }}
+          matrixToken: ${{ secrets.MATRIX_NOTIFY_TOKEN }}
+          replaceUserMap: ${{ vars.MATRIX_USER_MAP }}
+          message: >-
+            🔴 [${{ needs.dump_config.outputs.releaseType }} build ${{ github.run_number}}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            has failed at step ${{ steps.info.outputs.fail_steps }} (triggered by @${{ github.actor }})
+
+      - name: Notify Cancelled
+        if: ${{ !contains(needs.*.result, 'failure') && contains(needs.*.result, 'cancelled')  }}
+        uses: kewisch/action-matrix-notify@v1
+        with:
+          matrixHomeserver: "mozilla.modular.im"
+          matrixRoomId: ${{ vars.MATRIX_NOTIFY_ROOM }}
+          matrixToken: ${{ secrets.MATRIX_NOTIFY_TOKEN }}
+          message: >-
+            ⚪ [${{ needs.dump_config.outputs.releaseType }} build ${{ github.run_number}}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            was cancelled
+
+      - name: Notify Success (Beta/Release)
+        if: ${{ !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && (needs.dump_config.outputs.releaseType == 'beta' || needs.dump_config.outputs.releaseType == 'release')   }}
+        uses: kewisch/action-matrix-notify@v1
+        with:
+          matrixHomeserver: "mozilla.modular.im"
+          matrixRoomId: ${{ vars.MATRIX_NOTIFY_ROOM }}
+          matrixToken: ${{ secrets.MATRIX_NOTIFY_TOKEN }}
+          replaceUserMap: ${{ vars.MATRIX_USER_MAP }}
+          message: >-
+            🟢 [${{ needs.dump_config.outputs.releaseType }} build ${{ github.run_number}}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            has succeeded (triggered by @${{ github.actor}})
+
+      - name: Notify Success (Daily)
+        if: ${{ !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && needs.dump_config.outputs.releaseType == 'daily' && steps.last_status.outputs.last_status == 'failure' }}
+        uses: kewisch/action-matrix-notify@v1
+        with:
+          matrixHomeserver: "mozilla.modular.im"
+          matrixRoomId: ${{ vars.MATRIX_NOTIFY_ROOM }}
+          matrixToken: ${{ secrets.MATRIX_NOTIFY_TOKEN }}
+          message: >-
+            🟢 [${{ needs.dump_config.outputs.releaseType }} build ${{ github.run_number}}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            has recovered
