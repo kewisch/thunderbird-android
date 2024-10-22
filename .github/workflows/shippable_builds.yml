@@ -324,8 +324,8 @@ jobs:
 
           # Ready to commit. Make sure to pull again to reduce likelihood of race conditions
           git status
-          git pull
           git commit -m "Release: ${APPLICATION_LABEL} ${FULL_VERSION_NAME}"
+          git pull --rebase -X ours
           git log -n 5
 
           set +e
@@ -337,6 +337,7 @@ jobs:
             echo "Push rejected, trying again once in 5 seconds"
             sleep 5
             git pull --rebase -X ours
+            git log -n 5
             git push
           fi
 
