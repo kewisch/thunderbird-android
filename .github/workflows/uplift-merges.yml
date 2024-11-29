@@ -1,0 +1,33 @@
+---
+name: Uplift Merges
+on:
+  workflow_dispatch:
+    inputs:
+      dryRun:
+        type: boolean
+        description: Dry run
+        default: true
+      upliftBranch:
+        type: choice
+        description: Branch to uplift to
+        options:
+          - beta
+          - release
+
+jobs:
+  uplift:
+    name: Uplift
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run uplift script
+        env:
+          DRYRUN: ${{ inputs.dryRun && "" || "--no-dry-run" }}
+          BRANCH: ${{ inputs.upliftBranch }}
+        run: |
+          bash scripts/uplift-merges.sh $DRYRUN --$BRANCH
