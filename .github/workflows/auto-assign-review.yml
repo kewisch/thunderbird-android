@@ -1,0 +1,27 @@
+---
+name: Assign reviewer as assignee
+
+on:
+  pull_request:
+    types: [review_requested]
+
+jobs:
+  assign-reviewer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assign reviewer to PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const reviewer = context.payload.requested_reviewer?.login;
+            const issue_number = context.payload.pull_request.number;
+
+            if (reviewer) {
+              await github.rest.issues.addAssignees({
+                context.repo.owner,
+                context.repo.repo,
+                issue_number,
+                assignees: [reviewer]
+              });
+              console.log(`Assigned ${reviewer} to PR #${issue_number}`);
+            }
