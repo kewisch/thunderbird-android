@@ -1,10 +1,2 @@
 # General module owners
-* @thunderbird/mobile-android-reviewers
-
-# Release Engineering
-/.github/ @thunderbird/build-release 
-/docs/ci/ @thunderbird/build-release 
-/scripts/ci/ @thunderbird/build-release
-
-# CODEOWNERS protection
-/.github/CODEOWNERS @kewisch
+* @kewisch @notkewisch
